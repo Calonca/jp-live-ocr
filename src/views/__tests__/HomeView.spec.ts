@@ -35,7 +35,7 @@ Object.defineProperty(global.navigator, 'mediaDevices', {
 })
 
 describe('HomeView OCR Functionality', () => {
-  let wrapper: any
+  let wrapper: ReturnType<typeof mount<typeof HomeView>>
 
   beforeEach(() => {
     wrapper = mount(HomeView)
@@ -53,16 +53,16 @@ describe('HomeView OCR Functionality', () => {
   })
 
   it('has the correct initial state for OCR functionality', () => {
-    expect(wrapper.vm.ocrResult).toBe('')
-    expect(wrapper.vm.isProcessing).toBe(false)
-    expect(wrapper.vm.showDictionary).toBe(false)
-    expect(wrapper.vm.selectedWord).toBe('')
+    expect((wrapper.vm as any).ocrResult).toBe('')
+    expect((wrapper.vm as any).isProcessing).toBe(false)
+    expect((wrapper.vm as any).showDictionary).toBe(false)
+    expect((wrapper.vm as any).selectedWord).toBe('')
   })
 
   it('properly splits text into displayable words using getDisplayWords method', () => {
     // Set up OCR result
-    wrapper.vm.ocrResult = 'こんにちは 世界'
-    const words = wrapper.vm.getDisplayWords()
+    ;(wrapper.vm as any).ocrResult = 'こんにちは 世界'
+    const words = (wrapper.vm as any).getDisplayWords()
     expect(words).toEqual([
       { text: 'こんにちは' },
       { text: '世界' }
@@ -74,30 +74,30 @@ describe('HomeView OCR Functionality', () => {
     const testWord = 'こんにちは'
     
     // Call the handleWordClick method directly
-    await wrapper.vm.handleWordClick(mockEvent, testWord)
+    await (wrapper.vm as any).handleWordClick(mockEvent, testWord)
     
     await wrapper.vm.$nextTick()
     
-    expect(wrapper.vm.selectedWord).toBe(testWord)
-    expect(wrapper.vm.showDictionary).toBe(true)
-    expect(wrapper.vm.dictionaryPosition).toEqual({ x: 100, y: 200 })
+    expect((wrapper.vm as any).selectedWord).toBe(testWord)
+    expect((wrapper.vm as any).showDictionary).toBe(true)
+    expect((wrapper.vm as any).dictionaryPosition).toEqual({ x: 100, y: 200 })
   })
 
   it('closes dictionary when closeDictionary is called', async () => {
     // Set up dictionary state
-    wrapper.vm.showDictionary = true
-    wrapper.vm.selectedWord = 'テスト'
-    wrapper.vm.selectedWordInfo = { word: 'テスト', meanings: [] }
+    ;(wrapper.vm as any).showDictionary = true
+    ;(wrapper.vm as any).selectedWord = 'テスト'
+    ;(wrapper.vm as any).selectedWordInfo = { word: 'テスト', meanings: [] }
     
     await wrapper.vm.$nextTick()
     
     // Call close method
-    wrapper.vm.closeDictionary()
+    ;(wrapper.vm as any).closeDictionary()
     
     await wrapper.vm.$nextTick()
     
-    expect(wrapper.vm.showDictionary).toBe(false)
-    expect(wrapper.vm.selectedWord).toBe('')
-    expect(wrapper.vm.selectedWordInfo).toBe(null)
+    expect((wrapper.vm as any).showDictionary).toBe(false)
+    expect((wrapper.vm as any).selectedWord).toBe('')
+    expect((wrapper.vm as any).selectedWordInfo).toBe(null)
   })
 })

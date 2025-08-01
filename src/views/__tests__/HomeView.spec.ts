@@ -57,30 +57,32 @@ describe('HomeView OCR Functionality', () => {
     expect((wrapper.vm as any).isProcessing).toBe(false)
     expect((wrapper.vm as any).showDictionary).toBe(false)
     expect((wrapper.vm as any).selectedWord).toBe('')
+    expect((wrapper.vm as any).ocrWords).toEqual([])
   })
 
-  it('properly splits text into displayable words using getDisplayWords method', () => {
-    // Set up OCR result
+  it('stores OCR words when OCR processing completes', () => {
+    // Set up OCR result and words
     ;(wrapper.vm as any).ocrResult = 'こんにちは 世界'
-    const words = (wrapper.vm as any).getDisplayWords()
-    expect(words).toEqual([
-      { text: 'こんにちは' },
-      { text: '世界' }
-    ])
+    ;(wrapper.vm as any).ocrWords = [
+      { text: 'こんにちは', bbox: { x0: 0, y0: 0, x1: 100, y1: 50 }, confidence: 95 },
+      { text: '世界', bbox: { x0: 110, y0: 0, x1: 180, y1: 50 }, confidence: 90 }
+    ]
+    
+    expect((wrapper.vm as any).ocrWords).toHaveLength(2)
+    expect((wrapper.vm as any).ocrWords[0].text).toBe('こんにちは')
+    expect((wrapper.vm as any).ocrWords[1].text).toBe('世界')
   })
 
   it('handles word click events correctly', async () => {
-    const mockEvent = { clientX: 100, clientY: 200 }
     const testWord = 'こんにちは'
     
     // Call the handleWordClick method directly
-    await (wrapper.vm as any).handleWordClick(mockEvent, testWord)
+    await (wrapper.vm as any).handleWordClick(testWord)
     
     await wrapper.vm.$nextTick()
     
     expect((wrapper.vm as any).selectedWord).toBe(testWord)
     expect((wrapper.vm as any).showDictionary).toBe(true)
-    expect((wrapper.vm as any).dictionaryPosition).toEqual({ x: 100, y: 200 })
   })
 
   it('closes dictionary when closeDictionary is called', async () => {

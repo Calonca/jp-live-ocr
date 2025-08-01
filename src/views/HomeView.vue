@@ -22,6 +22,15 @@ const selectedWordInfo = ref<JpdbLookupResponse | null>(null)
 const jpdbApiKey = ref(jpdbService.getApiKey() || '')
 const showApiKeyInput = ref(!jpdbService.getApiKey())
 
+// New reactive references for word overlays
+const ocrWords = ref<Array<{
+  text: string
+  bbox: { x0: number; y0: number; x1: number; y1: number }
+  confidence: number
+}>>([])
+const imageContainerRef = ref<HTMLElement | null>(null)
+const imageUploadRef = ref<HTMLInputElement | null>(null)
+
 // Start camera
 const startCamera = async () => {
   try {
@@ -68,6 +77,20 @@ const captureImage = () => {
   capturedImage.value = canvas.toDataURL('image/png')
 }
 
+// Handle image upload for testing
+const handleImageUpload = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  
+  if (file) {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      capturedImage.value = e.target?.result as string
+    }
+    reader.readAsDataURL(file)
+  }
+}
+
 // Perform OCR on captured image
 const performOCR = async () => {
   if (!capturedImage.value) return
@@ -76,14 +99,26 @@ const performOCR = async () => {
   errorMessage.value = ''
 
   try {
-    const { data: { text } } = await Tesseract.recognize(
+    const { data } = await Tesseract.recognize(
       capturedImage.value,
       'jpn', // Japanese language
       {
         logger: m => console.log(m) // Optional: log progress
       }
     )
-    ocrResult.value = text.trim()
+    
+    // Store OCR results
+    ocrResult.value = data.text.trim()
+    
+    // Store word data with bounding boxes
+    if ((data as any).words) {
+      ocrWords.value = (data as any).words.map((word: any) => ({
+        text: word.text,
+        bbox: word.bbox,
+        confidence: word.confidence
+      }))
+      console.log('OCR Words with bounding boxes:', ocrWords.value)
+    }
     
     // Parse text with jpdb if API key is available
     if (ocrResult.value && jpdbService.getApiKey()) {
@@ -133,11 +168,11 @@ const showApiKeySettings = () => {
   jpdbApiKey.value = jpdbService.getApiKey() || ''
 }
 
-// Handle word click for dictionary
-const handleWordClick = async (event: MouseEvent, word: string) => {
+// Handle word click for dictionary (updated for overlays)
+const handleWordClick = async (word: string) => {
   selectedWord.value = word.trim()
   if (selectedWord.value) {
-    dictionaryPosition.value = { x: event.clientX, y: event.clientY }
+    // Show dictionary in fixed position at bottom
     showDictionary.value = true
     selectedWordInfo.value = null
     
@@ -163,13 +198,35 @@ const closeDictionary = () => {
   selectedWordInfo.value = null
 }
 
-// Get words for display (use jpdb tokens if available, otherwise split text)
-const getDisplayWords = (): Array<{ text: string; token?: JpdbToken }> => {
-  if (jpdbTokens.value.length > 0) {
-    return jpdbTokens.value.map(token => ({ text: token.text, token }))
+// Get jpdb token info for a specific word
+const getJpdbTokenForWord = (wordText: string): JpdbToken | undefined => {
+  return jpdbTokens.value.find(token => token.text.trim() === wordText.trim())
+}
+
+// Calculate overlay position and size
+const getWordOverlayStyle = (bbox: { x0: number; y0: number; x1: number; y1: number }): Record<string, string> => {
+  if (!imageRef.value) return {}
+  
+  const img = imageRef.value
+  const imgRect = img.getBoundingClientRect()
+  
+  // Calculate scale factors
+  const scaleX = img.clientWidth / img.naturalWidth
+  const scaleY = img.clientHeight / img.naturalHeight
+  
+  // Scale the bounding box to match the displayed image size
+  const left = bbox.x0 * scaleX
+  const top = bbox.y0 * scaleY
+  const width = (bbox.x1 - bbox.x0) * scaleX
+  const height = (bbox.y1 - bbox.y0) * scaleY
+  
+  return {
+    position: 'absolute',
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${width}px`,
+    height: `${height}px`,
   }
-  // Fallback to simple word splitting
-  return ocrResult.value.split(/(\s+)/).filter(word => word.trim().length > 0).map(word => ({ text: word }))
 }
 
 // Get CSS class for word based on jpdb status
@@ -233,8 +290,8 @@ onUnmounted(() => {
         {{ errorMessage }}
       </div>
 
-      <!-- Camera section -->
-      <div class="camera-section">
+      <!-- Camera section with word overlays -->
+      <div class="camera-section" ref="imageContainerRef">
         <video
           ref="videoRef"
           autoplay
@@ -243,14 +300,28 @@ onUnmounted(() => {
           :class="{ hidden: capturedImage }"
         ></video>
         
-        <!-- Captured image -->
-        <img
-          v-if="capturedImage"
-          ref="imageRef"
-          :src="capturedImage"
-          alt="Captured image"
-          class="captured-image"
-        />
+        <!-- Captured image with word overlays -->
+        <div v-if="capturedImage" class="image-container">
+          <img
+            ref="imageRef"
+            :src="capturedImage"
+            alt="Captured image"
+            class="captured-image"
+            @load="$forceUpdate()" 
+          />
+          
+          <!-- Word overlays -->
+          <div
+            v-for="(word, index) in ocrWords"
+            :key="`word-${index}`"
+            :style="getWordOverlayStyle(word.bbox)"
+            @click="handleWordClick(word.text)"
+            :class="['word-overlay', getWordClass(getJpdbTokenForWord(word.text))]"
+            :title="`${word.text} (confidence: ${Math.round(word.confidence)}%)`"
+          >
+            <!-- Invisible content to make the overlay clickable -->
+          </div>
+        </div>
         
         <!-- Hidden canvas for image capture -->
         <canvas ref="canvasRef" style="display: none;"></canvas>
@@ -267,6 +338,23 @@ onUnmounted(() => {
           📷 Capture Image
         </button>
         
+        <!-- Test image upload (for development/testing) -->
+        <div v-if="!capturedImage" class="test-upload">
+          <input
+            type="file"
+            accept="image/*"
+            @change="handleImageUpload"
+            ref="imageUploadRef"
+            style="display: none;"
+          />
+          <button
+            @click="imageUploadRef?.click()"
+            class="btn btn-secondary"
+          >
+            📁 Upload Test Image
+          </button>
+        </div>
+        
         <div v-else class="capture-controls">
           <button
             @click="performOCR"
@@ -277,7 +365,7 @@ onUnmounted(() => {
           </button>
           
           <button
-            @click="() => { capturedImage = ''; ocrResult = ''; }"
+            @click="() => { capturedImage = ''; ocrResult = ''; ocrWords = []; }"
             class="btn btn-secondary"
           >
             📷 Take New Photo
@@ -285,56 +373,26 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- OCR Results -->
-      <div v-if="ocrResult" class="ocr-results">
-        <h2>OCR Results:</h2>
+      <!-- Fixed Dictionary Panel (replaces OCR results section) -->
+      <div v-if="ocrResult" class="dictionary-panel">
+        <div class="dictionary-panel-header">
+          <h2 v-if="!showDictionary">OCR Complete - Click on words in the image above</h2>
+          <h2 v-else>Dictionary</h2>
+          <button 
+            v-if="showDictionary" 
+            @click="closeDictionary" 
+            class="close-dictionary-btn"
+          >
+            ✕ Close
+          </button>
+        </div>
+        
         <div v-if="isParsing" class="parsing-status">
           🔄 Analyzing text with jpdb...
         </div>
-        <div class="ocr-text">
-          <span
-            v-for="(wordObj, index) in getDisplayWords()"
-            :key="`${wordObj.text}-${index}`"
-            @click="(event) => handleWordClick(event, wordObj.text)"
-            :class="getWordClass(wordObj.token)"
-            :title="wordObj.token?.card_state ? `Card State: ${wordObj.token.card_state}` : 'Click for dictionary'"
-          >
-            {{ wordObj.text }}
-          </span>
-        </div>
-        <div v-if="jpdbService.getApiKey()" class="jpdb-legend">
-          <small>
-            <span class="legend-item">
-              <span class="jpdb-known">■</span> Known
-            </span>
-            <span class="legend-item">
-              <span class="jpdb-learning">■</span> Learning
-            </span>
-            <span class="legend-item">
-              <span class="jpdb-new">■</span> New
-            </span>
-            <span class="legend-item">
-              <span class="jpdb-suspended">■</span> Suspended
-            </span>
-            <span class="legend-item">
-              <span class="jpdb-locked">■</span> Locked
-            </span>
-          </small>
-        </div>
-      </div>
-
-      <!-- Dictionary Popup -->
-      <div
-        v-if="showDictionary"
-        class="dictionary-popup"
-        :style="{ left: dictionaryPosition.x + 'px', top: dictionaryPosition.y + 'px' }"
-        @click.stop
-      >
-        <div class="dictionary-header">
-          <h3>Dictionary</h3>
-          <button @click="closeDictionary" class="close-btn">×</button>
-        </div>
-        <div class="dictionary-content">
+        
+        <!-- Dictionary content (shown when a word is selected) -->
+        <div v-if="showDictionary" class="dictionary-content">
           <p><strong>Word:</strong> {{ selectedWord }}</p>
           
           <div v-if="isLookingUp" class="loading">
@@ -379,14 +437,33 @@ onUnmounted(() => {
             <p><em>No dictionary data found for this word.</em></p>
           </div>
         </div>
+        
+        <!-- Instructions when no word is selected -->
+        <div v-else class="instructions">
+          <p>{{ ocrWords.length }} words detected. Click on any highlighted word in the image above to see its dictionary entry.</p>
+          
+          <div v-if="jpdbService.getApiKey()" class="jpdb-legend">
+            <small>
+              <span class="legend-item">
+                <span class="jpdb-known">■</span> Known
+              </span>
+              <span class="legend-item">
+                <span class="jpdb-learning">■</span> Learning
+              </span>
+              <span class="legend-item">
+                <span class="jpdb-new">■</span> New
+              </span>
+              <span class="legend-item">
+                <span class="jpdb-suspended">■</span> Suspended
+              </span>
+              <span class="legend-item">
+                <span class="jpdb-locked">■</span> Locked
+              </span>
+            </small>
+          </div>
+        </div>
       </div>
 
-      <!-- Overlay to close dictionary -->
-      <div
-        v-if="showDictionary"
-        class="dictionary-overlay"
-        @click="closeDictionary"
-      ></div>
     </div>
   </main>
 </template>
@@ -499,21 +576,73 @@ h1 {
   min-height: 300px;
 }
 
+.image-container {
+  position: relative;
+  display: inline-block;
+}
+
 .video-feed,
 .captured-image {
   max-width: 100%;
   max-height: 400px;
   object-fit: contain;
+  display: block;
 }
 
 .video-feed.hidden {
   display: none;
 }
 
+/* Word overlay styles */
+.word-overlay {
+  cursor: pointer;
+  border: 2px solid rgba(0, 123, 255, 0.7);
+  background-color: rgba(0, 123, 255, 0.1);
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.word-overlay:hover {
+  border-color: rgba(0, 123, 255, 1);
+  background-color: rgba(0, 123, 255, 0.2);
+}
+
+/* jpdb word coloring for overlays */
+.word-overlay.jpdb-known {
+  border-color: rgba(46, 125, 50, 0.8);
+  background-color: rgba(200, 230, 201, 0.3);
+}
+
+.word-overlay.jpdb-learning {
+  border-color: rgba(245, 124, 0, 0.8);
+  background-color: rgba(255, 243, 224, 0.3);
+}
+
+.word-overlay.jpdb-new {
+  border-color: rgba(198, 40, 40, 0.8);
+  background-color: rgba(255, 235, 238, 0.3);
+}
+
+.word-overlay.jpdb-suspended {
+  border-color: rgba(123, 31, 162, 0.8);
+  background-color: rgba(243, 229, 245, 0.3);
+}
+
+.word-overlay.jpdb-locked {
+  border-color: rgba(69, 90, 100, 0.8);
+  background-color: rgba(236, 239, 241, 0.3);
+}
+
 .controls {
   display: flex;
   justify-content: center;
   gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.test-upload {
+  display: flex;
+  justify-content: center;
 }
 
 .capture-controls {
@@ -562,20 +691,54 @@ h1 {
   cursor: not-allowed;
 }
 
-.ocr-results {
+/* Fixed Dictionary Panel (replaces OCR results) */
+.dictionary-panel {
   background: #f8f9fa;
-  padding: 1rem;
-  border-radius: 8px;
   border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+  min-height: 200px;
 }
 
-.ocr-results h2 {
-  margin-top: 0;
+.dictionary-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.dictionary-panel-header h2 {
+  margin: 0;
   color: #495057;
+  font-size: 1.25rem;
 }
 
-.ocr-text {
-  line-height: 1.6;
+.close-dictionary-btn {
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.25rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background-color 0.2s;
+}
+
+.close-dictionary-btn:hover {
+  background: #c82333;
+}
+
+.instructions {
+  color: #6c757d;
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.instructions p {
+  margin-bottom: 1rem;
   font-size: 1.1rem;
 }
 
@@ -583,20 +746,48 @@ h1 {
   color: #007bff;
   font-style: italic;
   margin-bottom: 0.5rem;
+  text-align: center;
 }
 
-.clickable-word {
-  cursor: pointer;
-  padding: 2px 4px;
+.dictionary-content {
+  color: #555;
+}
+
+.loading {
+  color: #007bff;
+  font-style: italic;
+  text-align: center;
+  padding: 1rem;
+}
+
+.word-details .reading,
+.word-details .pos,
+.word-details .meanings,
+.word-details .card-state,
+.word-details .frequency,
+.word-details .difficulty {
+  margin-bottom: 0.5rem;
+}
+
+.word-details ul {
+  margin: 0.25rem 0;
+  padding-left: 1.5rem;
+}
+
+.word-details li {
+  margin-bottom: 0.25rem;
+}
+
+.card-state span {
+  font-weight: bold;
+  padding: 2px 6px;
   border-radius: 3px;
-  transition: background-color 0.2s;
-  display: inline-block;
-  margin: 1px;
 }
 
-.clickable-word:hover {
-  background-color: #e3f2fd;
-  color: #1976d2;
+.no-api-key,
+.no-data {
+  text-align: center;
+  padding: 1rem 0;
 }
 
 /* jpdb word coloring */
@@ -632,101 +823,13 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   gap: 1rem;
+  justify-content: center;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-}
-
-.dictionary-popup {
-  position: fixed;
-  background: white;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  padding: 1rem;
-  min-width: 250px;
-  max-width: 400px;
-  z-index: 1000;
-  transform: translate(-50%, -100%);
-}
-
-.dictionary-header {
-  display: flex;
-  justify-content: between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 0.5rem;
-}
-
-.dictionary-header h3 {
-  margin: 0;
-  color: #333;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: #666;
-  margin-left: auto;
-}
-
-.close-btn:hover {
-  color: #333;
-}
-
-.dictionary-content {
-  color: #555;
-}
-
-.loading {
-  color: #007bff;
-  font-style: italic;
-}
-
-.word-details .reading,
-.word-details .pos,
-.word-details .meanings,
-.word-details .card-state,
-.word-details .frequency,
-.word-details .difficulty {
-  margin-bottom: 0.5rem;
-}
-
-.word-details ul {
-  margin: 0.25rem 0;
-  padding-left: 1.5rem;
-}
-
-.word-details li {
-  margin-bottom: 0.25rem;
-}
-
-.card-state span {
-  font-weight: bold;
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.no-api-key,
-.no-data {
-  text-align: center;
-  padding: 1rem 0;
-}
-
-.dictionary-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.1);
-  z-index: 999;
 }
 
 /* Mobile responsiveness */
@@ -748,6 +851,35 @@ h1 {
   
   .btn {
     width: 100%;
+  }
+  
+  .dictionary-panel {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+  }
+  
+  .dictionary-panel-header {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-start;
+  }
+  
+  .dictionary-panel-header h2 {
+    font-size: 1.1rem;
+  }
+  
+  .close-dictionary-btn {
+    align-self: flex-end;
+  }
+  
+  .word-overlay {
+    min-width: 20px;
+    min-height: 20px;
+  }
+  
+  .jpdb-legend {
+    gap: 0.5rem;
+    font-size: 0.875rem;
   }
 }
 </style>

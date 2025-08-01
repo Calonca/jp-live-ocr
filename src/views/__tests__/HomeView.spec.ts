@@ -2,7 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import HomeView from '../HomeView.vue'
 
-// Mock Tesseract.js
+// Mock jpdb service
+vi.mock('@/services/jpdbService', () => ({
+  jpdbService: {
+    getApiKey: vi.fn(() => null),
+    setApiKey: vi.fn(),
+    parseText: vi.fn(() => Promise.resolve({ tokens: [] })),
+    lookupWord: vi.fn(() => Promise.resolve(null)),
+    getWordColorClass: vi.fn(() => 'jpdb-new')
+  }
+}))
 vi.mock('tesseract.js', () => ({
   default: {
     recognize: vi.fn(() => 
@@ -36,9 +45,11 @@ describe('HomeView OCR Functionality', () => {
     expect(wrapper.find('h1').text()).toBe('日本語 Live OCR')
   })
 
-  it('shows capture button initially', () => {
-    const captureButton = wrapper.find('button')
-    expect(captureButton.text()).toContain('Capture Image')
+  it('shows API key setup initially when no key is stored', () => {
+    const setupSection = wrapper.find('.api-key-setup')
+    expect(setupSection.exists()).toBe(true)
+    const apiKeyButton = wrapper.find('button')
+    expect(apiKeyButton.text()).toContain('Set API Key')
   })
 
   it('has the correct initial state for OCR functionality', () => {
@@ -48,10 +59,14 @@ describe('HomeView OCR Functionality', () => {
     expect(wrapper.vm.selectedWord).toBe('')
   })
 
-  it('properly splits text into clickable words using getClickableWords method', () => {
-    const testText = 'こんにちは 世界'
-    const words = wrapper.vm.getClickableWords(testText)
-    expect(words).toEqual(['こんにちは', '世界'])
+  it('properly splits text into displayable words using getDisplayWords method', () => {
+    // Set up OCR result
+    wrapper.vm.ocrResult = 'こんにちは 世界'
+    const words = wrapper.vm.getDisplayWords()
+    expect(words).toEqual([
+      { text: 'こんにちは' },
+      { text: '世界' }
+    ])
   })
 
   it('handles word click events correctly', async () => {
@@ -59,7 +74,7 @@ describe('HomeView OCR Functionality', () => {
     const testWord = 'こんにちは'
     
     // Call the handleWordClick method directly
-    wrapper.vm.handleWordClick(mockEvent, testWord)
+    await wrapper.vm.handleWordClick(mockEvent, testWord)
     
     await wrapper.vm.$nextTick()
     
@@ -72,6 +87,7 @@ describe('HomeView OCR Functionality', () => {
     // Set up dictionary state
     wrapper.vm.showDictionary = true
     wrapper.vm.selectedWord = 'テスト'
+    wrapper.vm.selectedWordInfo = { word: 'テスト', meanings: [] }
     
     await wrapper.vm.$nextTick()
     
@@ -82,5 +98,6 @@ describe('HomeView OCR Functionality', () => {
     
     expect(wrapper.vm.showDictionary).toBe(false)
     expect(wrapper.vm.selectedWord).toBe('')
+    expect(wrapper.vm.selectedWordInfo).toBe(null)
   })
 })

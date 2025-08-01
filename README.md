@@ -5,8 +5,10 @@ A Japanese OCR learning app that uses live camera feed to capture Japanese text 
 ## Features
 
 - 📷 **Live Camera Feed**: Access device camera to capture Japanese text
-- 🔍 **OCR Processing**: Uses Tesseract.js to extract Japanese text from images
-- 📖 **Interactive Dictionary**: Click on recognized words for dictionary lookup (API integration coming soon)
+- 🔍 **OCR Processing**: Uses Tesseract.js to extract Japanese text from images  
+- 🎯 **JPDB Integration**: Optional integration with jpdb.io for word difficulty analysis
+- 📖 **Interactive Dictionary**: Click on recognized words for dictionary lookup
+- 🎨 **Word Difficulty Coloring**: Visual indicators for known/learning/new words (with API key)
 - 📱 **Mobile Responsive**: Works on both desktop and mobile devices
 - 🚀 **GitHub Pages Deployment**: Automatically deployed via GitHub Actions
 
@@ -64,9 +66,14 @@ npm run format
 ## Usage
 
 1. **Camera Access**: Allow camera permissions when prompted
-2. **Capture Image**: Click the camera button to take a photo
-3. **OCR Processing**: Click "Perform OCR" to extract text from the image
-4. **Dictionary Lookup**: Click on any word in the OCR results to see dictionary information
+2. **JPDB Integration**: (Optional) Set your jpdb.io API key for enhanced word analysis
+   - Get an API key from [jpdb.io settings](https://jpdb.io/settings)
+   - Click the "Setup API Key" button in the app to enter your key
+   - With API key: Words are colored by difficulty and learning status
+   - Without API key: Basic word splitting and dictionary lookup
+3. **Capture Image**: Click the camera button to take a photo
+4. **OCR Processing**: Click "Perform OCR" to extract text from the image
+5. **Dictionary Lookup**: Click on any word in the OCR results to see dictionary information
 
 ## Deployment
 
